@@ -7,7 +7,6 @@ from torch import nn
 import numpy as np
 import torch
 import torch.nn.functional as nnf
-import sys
 from typing import Tuple, List, Union, Optional
 from transformers import (
     GPT2Tokenizer,
@@ -42,8 +41,19 @@ WEIGHTS_PATHS = {
 }
 
 D = torch.device
-CPU = torch.device("cpu")
+CPU = torch.device('cpu')
 
+def get_device(device_id: int) -> D:
+    if not torch.cuda.is_available():
+        return CPU
+    device_id = min(torch.cuda.device_count() - 1, device_id)
+    return torch.device(f'cuda:{device_id}')
+
+CUDA = get_device
+is_gpu = True
+device = CUDA(0) if is_gpu else "cpu"
+clip_model, preprocess = clip.load("ViT-B/32", device=device, jit=False)
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
 class Predictor(cog.Predictor):
     def setup(self):
@@ -300,3 +310,31 @@ def generate2(
             generated_list.append(output_text)
 
     return generated_list[0]
+
+prefix_length = 10
+model = ClipCaptionModel(prefix_length)
+my_path = os.path.dirname(os.path.abspath(__file__))
+model.load_state_dict(torch.load(os.path.join(my_path, "../models/captions_coco_weights.pt"), map_location=CPU)) 
+model = model.eval() 
+device = CUDA(0) if is_gpu else "cpu"
+model = model.to(device)
+
+def get_captions_for_path(image_path):
+    return get_captions(io.imread(image_path))
+
+def get_captions(image_array, use_beam_search=False):
+    pil_image = PIL.Image.fromarray(image_array)
+    image = preprocess(pil_image).unsqueeze(0).to(device)
+    with torch.no_grad():
+        # if type(model) is ClipCaptionE2E:
+        #     prefix_embed = model.forward_image(image)
+        # else:
+        prefix = clip_model.encode_image(image).to(device, dtype=torch.float32)
+        prefix_embed = model.clip_project(prefix).reshape(1, prefix_length, -1)
+    if use_beam_search:
+        return generate_beam(model, tokenizer, embed=prefix_embed)[0]
+    else:
+        return generate2(model, tokenizer, embed=prefix_embed)
+
+if __name__ == '__main__':
+    print(get_captions_for_path("Image00004.jpg"))
