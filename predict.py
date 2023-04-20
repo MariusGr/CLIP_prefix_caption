@@ -3,6 +3,7 @@
 
 import clip
 import os
+import sys
 from torch import nn
 import numpy as np
 import torch
@@ -19,7 +20,7 @@ import PIL.Image
 
 import cog
 
-# import torch
+sys.stdout.reconfigure(write_through=True)
 
 N = type(None)
 V = np.array
