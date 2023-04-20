@@ -258,6 +258,7 @@ def generate2(
     top_p=0.8,
     temperature=1.0,
     stop_token: str = ".",
+    stop_event=None,
 ):
     model.eval()
     generated_num = 0
@@ -279,7 +280,9 @@ def generate2(
                 generated = model.gpt.transformer.wte(tokens)
 
             for i in range(entry_length):
-
+                if stop_event is not None and stop_event.is_set():
+                    return None
+                print(f"Captions Progress: {round(100 * i/stop_token_index)}%")
                 outputs = model.gpt(inputs_embeds=generated)
                 logits = outputs.logits
                 logits = logits[:, -1, :] / (temperature if temperature > 0 else 1.0)
@@ -322,7 +325,7 @@ model = model.to(device)
 def get_captions_for_path(image_path):
     return get_captions(io.imread(image_path))
 
-def get_captions(image_array, use_beam_search=False):
+def get_captions(image_array, use_beam_search=False, stop_event=None):
     pil_image = PIL.Image.fromarray(image_array)
     image = preprocess(pil_image).unsqueeze(0).to(device)
     with torch.no_grad():
@@ -331,10 +334,14 @@ def get_captions(image_array, use_beam_search=False):
         # else:
         prefix = clip_model.encode_image(image).to(device, dtype=torch.float32)
         prefix_embed = model.clip_project(prefix).reshape(1, prefix_length, -1)
+
+    if stop_event is not None and stop_event.is_set():
+        return None
+
     if use_beam_search:
         return generate_beam(model, tokenizer, embed=prefix_embed)[0]
     else:
-        return generate2(model, tokenizer, embed=prefix_embed)
+        return generate2(model, tokenizer, embed=prefix_embed, stop_event=stop_event)
 
 if __name__ == '__main__':
-    print(get_captions_for_path("Image00004.jpg"))
+    print(get_captions_for_path("Images/CONCEPTUAL_01.jpg"))
